@@ -33,16 +33,12 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
-		-Wall -Wextra -Werror \
-		-I$(PKG_BUILD_DIR)/src \
-		-o $(PKG_BUILD_DIR)/linksys-udp-st \
-		$(PKG_BUILD_DIR)/src/*.c
+	# No compilation needed for shell script
 endef
 
 define Package/linksys-udp-st/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/linksys-udp-st $(1)/usr/bin/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/linksys-udp-st.sh $(1)/usr/bin/linksys-udp-st
 endef
 
 $(eval $(call BuildPackage,linksys-udp-st))
