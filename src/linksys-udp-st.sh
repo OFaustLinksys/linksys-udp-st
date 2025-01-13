@@ -59,11 +59,13 @@ output_error() {
 output_status() {
     local status=$1
     local throughput=$2
+    local direction=$3
 
     echo "{"
-    echo "    \"status\": \"$status\""
+    echo "    \"status\": \"$status\","
     if [ "$status" = "running" ]; then
-        echo "    ,\"throughput\": $throughput,"
+        echo "    \"direction\": \"$direction\","
+        echo "    \"throughput\": $throughput,"
         echo "    \"unit\": \"bps\""
     fi
     echo "}"
@@ -95,10 +97,20 @@ output_results() {
     echo "}"
 }
 
+# Get current test type (tx/rx) from running process
+get_current_test_type() {
+    local ps_output
+    ps_output=$(ps aux | grep "[n]ss-udp-st.*--mode start" | grep -o "type [^ ]*" | awk '{print $2}')
+    if [ -n "$ps_output" ]; then
+        echo "$ps_output"
+        return 0
+    fi
+    return 1
+}
+
 # Get throughput from stats file
 get_throughput() {
-    local direction=$1
-    local type=$([ "$direction" = "upstream" ] && echo "tx" || echo "rx")
+    local type=$1
     local stats_file="${STATS_DIR}/${type}_stats"
 
     # Try to update stats file
@@ -123,7 +135,7 @@ get_throughput() {
         if [ $in_throughput_section -eq 1 ] && [[ "$line" == *"throughput  ="* ]]; then
             throughput=$(echo "$line" | grep -o '[0-9]\+')
             if [ -n "$throughput" ]; then
-                # Convert Mbps to bps
+                debug_log "Found throughput: $throughput Mbps (converted to $((throughput * 1000000)) bps)"
                 echo $((throughput * 1000000))
                 return 0
             fi
@@ -136,7 +148,7 @@ get_throughput() {
 
 # Clean up resources
 cleanup() {
-    debug_log "Cleaning up resources..."
+    debug_log "Cleaning up..."
 
     # Try to get final stats before cleanup
     debug_log "Getting final stats..."
@@ -240,25 +252,55 @@ handle_start() {
     fi
 
     # Output initial status
-    output_status "running" 0
+    output_status "running" 0 "$direction"
     return 0
+}
+
+# Parse command line parameters
+parse_params() {
+    local -n params=$1
+    shift
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --src-ip) params[src_ip]=$2 ;;
+            --dst-ip) params[dst_ip]=$2 ;;
+            --src-port) params[src_port]=$2 ;;
+            --dst-port) params[dst_port]=$2 ;;
+            --protocol) params[protocol]=$2 ;;
+            --direction) params[direction]=$2 ;;
+        esac
+        shift 2
+    done
 }
 
 # Handle status command
 handle_status() {
-    local direction=$1
-
     # If module not loaded, test is not running
     if ! is_module_loaded; then
-        output_status "idle" 0
+        output_status "idle" 0 ""
         return 0
     fi
 
-    # Get current throughput for the correct direction
+    # Get current test type from running process
+    local type
+    type=$(get_current_test_type)
+    if [ $? -ne 0 ]; then
+        debug_log "Could not determine test type"
+        output_error "Could not determine test type"
+        return 1
+    fi
+    debug_log "Current test type: $type"
+
+    # Determine direction from type
+    local direction
+    direction=$([ "$type" = "tx" ] && echo "upstream" || echo "downstream")
+
+    # Get current throughput
     local throughput
-    throughput=$(get_throughput "$direction")
+    throughput=$(get_throughput "$type")
     if [ $? -eq 0 ]; then
-        output_status "running" "$throughput"
+        output_status "running" "$throughput" "$direction"
         return 0
     else
         output_error "Failed to get test results"
@@ -268,30 +310,41 @@ handle_status() {
 
 # Handle stop command
 handle_stop() {
-    local direction=$1
-    local src_ip=$2
-    local dst_ip=$3
-    local src_port=$4
-    local dst_port=$5
-    local protocol=$6
-
     # If module not loaded, no test is running
     if ! is_module_loaded; then
         output_error "No test running"
         return 1
     fi
 
+    # Get current test type and direction
+    local type
+    type=$(get_current_test_type)
+    if [ $? -ne 0 ]; then
+        debug_log "Could not determine test type"
+        output_error "Could not determine test type"
+        return 1
+    fi
+
+    local direction
+    direction=$([ "$type" = "tx" ] && echo "upstream" || echo "downstream")
+
     # Get final throughput before cleanup
     local throughput
-    throughput=$(get_throughput "$direction")
+    throughput=$(get_throughput "$type")
     local ret=$?
+
+    # Parse parameters into array
+    declare -A params
+    parse_params params "$@"
 
     # Always attempt cleanup
     cleanup
 
     # Output results if we got valid throughput
     if [ $ret -eq 0 ] && [ -n "$throughput" ]; then
-        output_results "$direction" "$src_ip" "$dst_ip" "$src_port" "$dst_port" "$protocol" "$throughput"
+        output_results "$direction" "${params[src_ip]}" "${params[dst_ip]}" \
+                      "${params[src_port]}" "${params[dst_port]}" "${params[protocol]}" \
+                      "$throughput"
         return 0
     else
         output_error "Failed to get final results"
@@ -303,35 +356,21 @@ handle_stop() {
 case "$1" in
     "start")
         shift
-        src_ip=""
-        dst_ip=""
-        src_port=""
-        dst_port=""
-        protocol=""
-        direction=""
-
-        # Parse parameters
-        while [ $# -gt 0 ]; do
-            case "$1" in
-                --src-ip) src_ip=$2 ;;
-                --dst-ip) dst_ip=$2 ;;
-                --src-port) src_port=$2 ;;
-                --dst-port) dst_port=$2 ;;
-                --protocol) protocol=$2 ;;
-                --direction) direction=$2 ;;
-            esac
-            shift 2
-        done
-
-        handle_start "$src_ip" "$dst_ip" "$src_port" "$dst_port" "$protocol" "$direction"
+        declare -A params
+        parse_params params "$@"
+        handle_start "${params[src_ip]}" "${params[dst_ip]}" \
+                    "${params[src_port]}" "${params[dst_port]}" \
+                    "${params[protocol]}" "${params[direction]}"
         ;;
 
     "status")
-        handle_status "$2"
+        shift
+        handle_status "$@"
         ;;
 
     "stop")
-        handle_stop "$2" "$3" "$4" "$5" "$6" "$7"
+        shift
+        handle_stop "$@"
         ;;
 
     *)
