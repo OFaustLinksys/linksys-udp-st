@@ -6,6 +6,7 @@ DEBUG=1
 # Constants
 NSS_UDP_ST_CMD="nss-udp-st"
 STATS_DIR="/tmp/nss-udp-st"
+MODULE_NAME="nss_udp_st"
 
 debug_log() {
     if [ $DEBUG -eq 1 ]; then
@@ -26,9 +27,16 @@ execute_cmd() {
     return $ret
 }
 
-# Check if test is running
+# Check if module is loaded
+is_module_loaded() {
+    lsmod | grep -q "^${MODULE_NAME}"
+    return $?
+}
+
+# Check if test is running by checking module status
 is_test_running() {
-    execute_cmd "$NSS_UDP_ST_CMD --mode stats --type tx" >/dev/null 2>&1
+    # Simply check if the module is loaded, as that's the most reliable indicator
+    is_module_loaded
     return $?
 }
 
@@ -131,11 +139,23 @@ cleanup() {
     execute_cmd "$NSS_UDP_ST_CMD --mode final"
     execute_cmd "$NSS_UDP_ST_CMD --mode clear"
 
-    # Verify cleanup
-    if is_test_running; then
-        debug_log "Cleanup failed, forcing module unload..."
-        rmmod nss_udp_st 2>/dev/null
+    # If module is still loaded after cleanup, try to unload it
+    if is_module_loaded; then
+        debug_log "Module still loaded after cleanup, attempting to unload..."
+        rmmod $MODULE_NAME 2>/dev/null
     fi
+}
+
+# Load kernel module if not already loaded
+ensure_module_loaded() {
+    if ! is_module_loaded; then
+        debug_log "Loading $MODULE_NAME module..."
+        modprobe $MODULE_NAME
+        if [ $? -ne 0 ]; then
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # Handle start command
@@ -181,6 +201,12 @@ handle_start() {
     # Validate direction
     if [ "$direction" != "upstream" ] && [ "$direction" != "downstream" ]; then
         output_error "Invalid direction (must be 'upstream' or 'downstream')"
+        return 1
+    fi
+
+    # Ensure module is loaded
+    if ! ensure_module_loaded; then
+        output_error "Failed to load kernel module"
         return 1
     fi
 
