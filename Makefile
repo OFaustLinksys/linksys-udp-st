@@ -4,6 +4,11 @@ PKG_NAME:=linksys-udp-st
 PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE_URL:=https://github.com/OFaustLinksys/linksys-udp-st.git
+PKG_SOURCE_VERSION:=main
+PKG_SOURCE_DATE:=2024-01-13
+
 PKG_MAINTAINER:=Linksys
 PKG_LICENSE:=GPL-2.0-or-later
 
@@ -14,7 +19,6 @@ define Package/linksys-udp-st
   CATEGORY:=Network
   TITLE:=Linksys UDP Speed Test Utility
   DEPENDS:=+kmod-nss-udp-st
-  EXTRA_DEPENDS:=kmod-nss-udp-st (>= 23.05)
 endef
 
 define Package/linksys-udp-st/description
@@ -24,19 +28,21 @@ define Package/linksys-udp-st/description
 endef
 
 define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) ./src/* $(PKG_BUILD_DIR)/
+	$(call Build/Prepare/Default)
 endef
 
-TARGET_CFLAGS += -Wall -Wextra -Werror -Wno-unused-parameter
-TARGET_CFLAGS += -D_GNU_SOURCE
-TARGET_CFLAGS += -I$(PKG_BUILD_DIR)
+define Build/Configure
+	# Nothing to configure
+endef
 
 define Build/Compile
-	$(TARGET_CC) $(TARGET_CFLAGS) -o $(PKG_BUILD_DIR)/linksys-udp-st \
-		$(PKG_BUILD_DIR)/linksys-udp-st.c \
-		$(PKG_BUILD_DIR)/json_helper.c \
-		$(PKG_BUILD_DIR)/module_ops.c
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-Wall -Wextra -Werror \
+		-I$(PKG_BUILD_DIR)/src \
+		-o $(PKG_BUILD_DIR)/linksys-udp-st \
+		$(PKG_BUILD_DIR)/src/linksys-udp-st.c \
+		$(PKG_BUILD_DIR)/src/json_helper.c \
+		$(PKG_BUILD_DIR)/src/module_ops.c
 endef
 
 define Package/linksys-udp-st/install
