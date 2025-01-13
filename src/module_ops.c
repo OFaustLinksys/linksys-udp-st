@@ -114,10 +114,17 @@ int stop_test(void) {
 
 int get_test_results(speedtest_config_t *config) {
     char cmd[512];
-    char stats_file[] = "/tmp/nss-udp-st/tx_stats";
+    char stats_file[64];
+
+    // Choose stats file based on direction
+    snprintf(stats_file, sizeof(stats_file), "/tmp/nss-udp-st/%s_stats",
+             strcmp(config->direction, "upstream") == 0 ? "tx" : "rx");
 
     // Get latest stats
-    snprintf(cmd, sizeof(cmd), "%s --mode stats --type tx", NSS_UDP_ST_CMD);
+    snprintf(cmd, sizeof(cmd), "%s --mode stats --type %s", 
+             NSS_UDP_ST_CMD,
+             strcmp(config->direction, "upstream") == 0 ? "tx" : "rx");
+
     if (execute_command(cmd) != 0) {
         return -1;
     }
@@ -132,38 +139,29 @@ int get_test_results(speedtest_config_t *config) {
     char line[256];
     unsigned long throughput = 0;
     bool found_throughput = false;
+    bool in_throughput_section = false;
 
     // Print entire file content for debugging
     debug_log("Stats file contents:");
     while (fgets(line, sizeof(line), fp)) {
         debug_log("> %s", line);
 
-        // Make a copy for parsing
-        char parse_line[256];
-        strncpy(parse_line, line, sizeof(parse_line));
+        // Check for Throughput Stats section
+        if (strstr(line, "Throughput Stats")) {
+            in_throughput_section = true;
+            continue;
+        }
 
-        // Convert to lowercase for case-insensitive matching
-        for (char *p = parse_line; *p; ++p) *p = tolower(*p);
-
-        // Look for various possible throughput indicators
-        if (strstr(parse_line, "throughput:") || 
-            strstr(parse_line, "rate:") || 
-            strstr(parse_line, "speed:") ||
-            strstr(parse_line, "mbps:") ||
-            strstr(parse_line, "gbps:")) {
-
-            // Try to find any number in the line
-            char *p = parse_line;
-            while (*p) {
-                if (isdigit(*p)) {
-                    throughput = strtoul(p, NULL, 10);
-                    found_throughput = true;
-                    debug_log("Found throughput: %lu", throughput);
-                    break;
-                }
-                p++;
+        // Parse throughput line in the correct section
+        if (in_throughput_section) {
+            unsigned long mbps;
+            if (sscanf(line, "        throughput  = %lu Mbps", &mbps) == 1) {
+                // Convert Mbps to bps
+                throughput = mbps * 1000000UL;
+                found_throughput = true;
+                debug_log("Found throughput: %lu Mbps (converted to %lu bps)", mbps, throughput);
+                break;
             }
-            if (found_throughput) break;
         }
     }
 
