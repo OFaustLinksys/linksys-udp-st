@@ -58,6 +58,52 @@ This will:
 - Unload the kernel module
 - Clean up resources
 
+## Examples
+
+## Quick Start Example
+
+To start a UDP speed test, use this command:
+
+```bash
+linksys-udp-st start --src-ip 192.168.1.144 --dst-ip 192.168.1.64 --src-port 5201 --dst-port 5201 --protocol udp --direction upstream
+```
+
+### Parameter Explanation:
+- `--src-ip`: Source IP address (sender)
+  - For upstream tests: your local device's IP
+  - For downstream tests: the remote device's IP
+- `--dst-ip`: Destination IP address (receiver)
+  - For upstream tests: the remote device's IP
+  - For downstream tests: your local device's IP
+- `--src-port`: Source port number (typically 5201)
+- `--dst-port`: Destination port number (typically 5201)
+- `--protocol`: Either 'udp' or 'tcp'
+- `--direction`: Either 'upstream' or 'downstream'
+
+### Example for Different Test Scenarios:
+
+1. Testing Upload Speed (Upstream):
+```bash
+linksys-udp-st start \
+    --src-ip 192.168.1.144 \  # Your local device
+    --dst-ip 192.168.1.64 \   # Remote device
+    --src-port 5201 \
+    --dst-port 5201 \
+    --protocol udp \
+    --direction upstream
+```
+
+2. Testing Download Speed (Downstream):
+```bash
+linksys-udp-st start \
+    --src-ip 192.168.1.64 \   # Remote device
+    --dst-ip 192.168.1.144 \  # Your local device
+    --src-port 5201 \
+    --dst-port 5201 \
+    --protocol udp \
+    --direction downstream
+```
+
 ## Example Output
 
 Status check while running:
