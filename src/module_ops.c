@@ -5,7 +5,7 @@
 #include <sys/wait.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <ctype.h> // Added for tolower
+#include <ctype.h>
 #include "module_ops.h"
 
 #define NSS_UDP_ST_CMD "nss-udp-st"
