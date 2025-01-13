@@ -4,19 +4,12 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
-#include <stdbool.h>  // Added for bool type
+#include <stdbool.h>
 #include "module_ops.h"
 
-#define MODPROBE_PATH "/sbin/modprobe"
-#define RMMOD_PATH "/sbin/rmmod"
-#define SYSFS_PATH "/sys/kernel/debug/nss_udp_st"
-#define MAX_SYSFS_PATH 128
+#define NSS_UDP_ST_CMD "nss-udp-st"
+#define MAX_CMD_LEN 512
 
-/**
- * Execute a shell command and return its exit status
- * @param command The command to execute
- * @return 0 on success, -1 on failure
- */
 static int execute_command(const char *command) {
     int status = system(command);
     if (status == -1) {
@@ -26,72 +19,72 @@ static int execute_command(const char *command) {
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
-/**
- * Write a value to a sysfs file
- * @param filename The name of the file in the nss_udp_st sysfs directory
- * @param value The value to write
- * @return 0 on success, -1 on failure
- */
-static int write_sysfs_file(const char *filename, const char *value) {
-    char path[MAX_SYSFS_PATH];
-    snprintf(path, sizeof(path), "%s/%s", SYSFS_PATH, filename);
-
-    FILE *fp = fopen(path, "w");
-    if (!fp) {
-        fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
-        return -1;
-    }
-
-    int ret = fprintf(fp, "%s\n", value);
-    fclose(fp);
-
-    return (ret < 0) ? -1 : 0;
-}
-
 int load_kernel_module(void) {
     char cmd[MAX_CMD_LEN];
-    snprintf(cmd, sizeof(cmd), "%s %s", MODPROBE_PATH, NSS_UDP_ST_MODULE);
-    return execute_command(cmd);
+
+    // Initialize the module
+    snprintf(cmd, sizeof(cmd), "%s --mode init --rate 1000 --buffer_sz 1500 --dscp 0 --net_dev eth4", 
+             NSS_UDP_ST_CMD);
+    if (execute_command(cmd) != 0) {
+        return -1;
+    }
+    return 0;
 }
 
 int unload_kernel_module(void) {
     char cmd[MAX_CMD_LEN];
-    snprintf(cmd, sizeof(cmd), "%s %s", RMMOD_PATH, NSS_UDP_ST_MODULE);
+
+    // Stop test if running
+    snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
+    execute_command(cmd);
+
+    // Finalize and clear
+    snprintf(cmd, sizeof(cmd), "%s --mode final", NSS_UDP_ST_CMD);
+    execute_command(cmd);
+
+    snprintf(cmd, sizeof(cmd), "%s --mode clear", NSS_UDP_ST_CMD);
     return execute_command(cmd);
 }
 
 int configure_test(speedtest_config_t *config) {
-    char config_str[MAX_CMD_LEN];
+    char cmd[MAX_CMD_LEN];
 
-    // Configure 5-tuple
-    snprintf(config_str, sizeof(config_str), "%s %s %d %d %s",
+    // Create the test configuration
+    snprintf(cmd, sizeof(cmd), 
+             "%s --mode create --sip %s --dip %s --sport %d --dport %d --version 4",
+             NSS_UDP_ST_CMD,
              config->src_ip, config->dst_ip,
-             config->src_port, config->dst_port,
-             config->protocol);
+             config->src_port, config->dst_port);
 
-    if (write_sysfs_file("config", config_str) != 0) {
-        return -1;
-    }
-
-    // Set direction
-    return write_sysfs_file("direction", config->direction);
+    return execute_command(cmd);
 }
 
 int start_test(void) {
-    return write_sysfs_file("start", "1");
+    char cmd[MAX_CMD_LEN];
+    snprintf(cmd, sizeof(cmd), "%s --mode start --type tx", NSS_UDP_ST_CMD);
+    return execute_command(cmd);
 }
 
 int stop_test(void) {
-    return write_sysfs_file("start", "0");
+    char cmd[MAX_CMD_LEN];
+    snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
+    return execute_command(cmd);
 }
 
 int get_test_results(speedtest_config_t *config) {
-    char path[MAX_SYSFS_PATH];
-    snprintf(path, sizeof(path), "%s/stats", SYSFS_PATH);
+    char cmd[MAX_CMD_LEN];
+    char stats_file[] = "/tmp/nss-udp-st/tx_stats";
 
-    FILE *fp = fopen(path, "r");
+    // Get latest stats
+    snprintf(cmd, sizeof(cmd), "%s --mode stats --type tx", NSS_UDP_ST_CMD);
+    if (execute_command(cmd) != 0) {
+        return -1;
+    }
+
+    // Read from stats file
+    FILE *fp = fopen(stats_file, "r");
     if (!fp) {
-        fprintf(stderr, "Failed to open %s: %s\n", path, strerror(errno));
+        fprintf(stderr, "Failed to open %s: %s\n", stats_file, strerror(errno));
         return -1;
     }
 
@@ -111,7 +104,7 @@ int get_test_results(speedtest_config_t *config) {
     fclose(fp);
 
     if (!found_throughput) {
-        fprintf(stderr, "Failed to parse throughput from stats\n");
+        fprintf(stderr, "Failed to parse throughput from stats file\n");
         return -1;
     }
 
