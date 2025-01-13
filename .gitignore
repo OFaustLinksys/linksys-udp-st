@@ -3,15 +3,20 @@
 *.ko
 *.a
 linksys-udp-st
+udp-st
 
 # OpenWrt build directory
-/openwrt/build/
+openwrt/build/
 
 # Editor files
 .vscode/
 *.swp
 *~
+.replit
 
 # System files
 .DS_Store
 Thumbs.db
+
+# Generated files
+generated-icon.png
