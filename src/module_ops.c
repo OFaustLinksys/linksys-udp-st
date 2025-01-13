@@ -8,7 +8,6 @@
 #include "module_ops.h"
 
 #define NSS_UDP_ST_CMD "nss-udp-st"
-#define MAX_CMD_LEN 512
 
 static int execute_command(const char *command) {
     int status = system(command);
@@ -20,7 +19,7 @@ static int execute_command(const char *command) {
 }
 
 int load_kernel_module(void) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
 
     // Initialize the module
     snprintf(cmd, sizeof(cmd), "%s --mode init --rate 1000 --buffer_sz 1500 --dscp 0 --net_dev eth4", 
@@ -32,7 +31,7 @@ int load_kernel_module(void) {
 }
 
 int unload_kernel_module(void) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
 
     // Stop test if running
     snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
@@ -47,7 +46,7 @@ int unload_kernel_module(void) {
 }
 
 int configure_test(speedtest_config_t *config) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
 
     // Create the test configuration
     snprintf(cmd, sizeof(cmd), 
@@ -60,19 +59,19 @@ int configure_test(speedtest_config_t *config) {
 }
 
 int start_test(void) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
     snprintf(cmd, sizeof(cmd), "%s --mode start --type tx", NSS_UDP_ST_CMD);
     return execute_command(cmd);
 }
 
 int stop_test(void) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
     snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
     return execute_command(cmd);
 }
 
 int get_test_results(speedtest_config_t *config) {
-    char cmd[MAX_CMD_LEN];
+    char cmd[512];
     char stats_file[] = "/tmp/nss-udp-st/tx_stats";
 
     // Get latest stats

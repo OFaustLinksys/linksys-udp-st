@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 
-#define MAX_CMD_LEN 256
 #define NSS_UDP_ST_MODULE "nss_udp_st"
 #define DEFAULT_TEST_TIME 20
 #define DEFAULT_BUFFER_SIZE 4096
