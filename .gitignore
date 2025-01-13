@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+*.ko
+*.a
+linksys-udp-st
+
+# OpenWrt build directory
+/openwrt/build/
+
+# Editor files
+.vscode/
+*.swp
+*~
+
+# System files
+.DS_Store
+Thumbs.db
