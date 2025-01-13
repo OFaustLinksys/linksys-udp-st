@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Debug mode (set to 1 to enable debug output)
-DEBUG=1
+DEBUG=0
 
 # Constants
 NSS_UDP_ST_CMD="nss-udp-st"
@@ -231,6 +231,7 @@ handle_start() {
 
 # Handle status command
 handle_status() {
+    load_config
     # If module not loaded, test is not running
     if ! is_module_loaded; then
         output_status "idle" 0
@@ -239,10 +240,10 @@ handle_status() {
 
     # Get current test type from running process
     local type
-    type=$(get_current_test_type)
-    if [ -z "$type" ]; then
-        output_status "idle" 0
-        return 0
+    if [ "$DIRECTION" = "upstream" ]; then
+        type="tx"
+    else
+        type="rx"
     fi
 
     # Get current throughput
@@ -266,12 +267,12 @@ handle_stop() {
     fi
 
     # Get current test type and direction
+    load_config
     local type
-    type=$(get_current_test_type)
-    if [ -z "$type" ]; then
-        cleanup
-        output_error "No test running"
-        return 1
+    if [ "$DIRECTION" = "upstream" ]; then
+        type="tx"
+    else
+        type="rx"
     fi
 
     # Load saved configuration
