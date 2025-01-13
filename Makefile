@@ -28,11 +28,8 @@ define Package/linksys-udp-st/description
 endef
 
 define Build/Prepare
-	$(call Build/Prepare/Default)
-endef
-
-define Build/Configure
-	# Nothing to configure
+	$(PKG_UNPACK)
+	$(Build/Patch)
 endef
 
 define Build/Compile
@@ -40,9 +37,7 @@ define Build/Compile
 		-Wall -Wextra -Werror \
 		-I$(PKG_BUILD_DIR)/src \
 		-o $(PKG_BUILD_DIR)/linksys-udp-st \
-		$(PKG_BUILD_DIR)/src/linksys-udp-st.c \
-		$(PKG_BUILD_DIR)/src/json_helper.c \
-		$(PKG_BUILD_DIR)/src/module_ops.c
+		$(PKG_BUILD_DIR)/src/*.c
 endef
 
 define Package/linksys-udp-st/install
