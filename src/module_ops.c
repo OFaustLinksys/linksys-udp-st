@@ -6,17 +6,30 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include "module_ops.h"
 
 #define NSS_UDP_ST_CMD "nss-udp-st"
 
+static void debug_log(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    fprintf(stderr, "DEBUG: ");
+    vfprintf(stderr, format, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+}
+
 static int execute_command(const char *command) {
+    debug_log("Executing command: %s", command);
     int status = system(command);
     if (status == -1) {
-        fprintf(stderr, "Failed to execute command: %s\n", strerror(errno));
+        debug_log("Failed to execute command: %s", strerror(errno));
         return -1;
     }
-    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    int exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    debug_log("Command exit code: %d", exit_code);
+    return exit_code;
 }
 
 int load_kernel_module(void) {
@@ -35,12 +48,15 @@ int unload_kernel_module(void) {
     char cmd[512];
 
     // Make sure to stop and cleanup in all cases
+    debug_log("Stopping test...");
     snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
     execute_command(cmd);  // Ignore errors, try to cleanup
 
+    debug_log("Finalizing...");
     snprintf(cmd, sizeof(cmd), "%s --mode final", NSS_UDP_ST_CMD);
     execute_command(cmd);  // Ignore errors, try to cleanup
 
+    debug_log("Clearing...");
     snprintf(cmd, sizeof(cmd), "%s --mode clear", NSS_UDP_ST_CMD);
     execute_command(cmd);  // Ignore errors, try to cleanup
 
@@ -68,19 +84,32 @@ int start_test(void) {
 
 int stop_test(void) {
     char cmd[512];
+    bool success = true;
 
     // First try to get final stats
+    debug_log("Getting final stats...");
     snprintf(cmd, sizeof(cmd), "%s --mode stats --type tx", NSS_UDP_ST_CMD);
-    execute_command(cmd);  // Ignore errors, proceed with stop
+    if (execute_command(cmd) != 0) {
+        debug_log("Warning: Failed to get final stats");
+        success = false;
+    }
 
     // Stop the test
+    debug_log("Stopping test...");
     snprintf(cmd, sizeof(cmd), "%s --mode stop", NSS_UDP_ST_CMD);
-    int ret = execute_command(cmd);
+    if (execute_command(cmd) != 0) {
+        debug_log("Warning: Failed to stop test");
+        success = false;
+    }
 
     // Always try to cleanup
-    unload_kernel_module();
+    debug_log("Cleaning up...");
+    if (unload_kernel_module() != 0) {
+        debug_log("Warning: Failed to cleanup completely");
+        success = false;
+    }
 
-    return ret;
+    return success ? 0 : -1;
 }
 
 int get_test_results(speedtest_config_t *config) {
@@ -96,7 +125,7 @@ int get_test_results(speedtest_config_t *config) {
     // Read from stats file
     FILE *fp = fopen(stats_file, "r");
     if (!fp) {
-        fprintf(stderr, "Failed to open %s: %s\n", stats_file, strerror(errno));
+        debug_log("Failed to open %s: %s", stats_file, strerror(errno));
         return -1;
     }
 
@@ -104,19 +133,32 @@ int get_test_results(speedtest_config_t *config) {
     unsigned long throughput = 0;
     bool found_throughput = false;
 
-    // More flexible parsing of throughput value
+    // Print entire file content for debugging
+    debug_log("Stats file contents:");
     while (fgets(line, sizeof(line), fp)) {
+        debug_log("> %s", line);
+
+        // Make a copy for parsing
+        char parse_line[256];
+        strncpy(parse_line, line, sizeof(parse_line));
+
         // Convert to lowercase for case-insensitive matching
-        for (char *p = line; *p; ++p) *p = tolower(*p);
+        for (char *p = parse_line; *p; ++p) *p = tolower(*p);
 
         // Look for various possible throughput indicators
-        if (strstr(line, "throughput:") || strstr(line, "rate:") || strstr(line, "speed:")) {
+        if (strstr(parse_line, "throughput:") || 
+            strstr(parse_line, "rate:") || 
+            strstr(parse_line, "speed:") ||
+            strstr(parse_line, "mbps:") ||
+            strstr(parse_line, "gbps:")) {
+
             // Try to find any number in the line
-            char *p = line;
+            char *p = parse_line;
             while (*p) {
                 if (isdigit(*p)) {
                     throughput = strtoul(p, NULL, 10);
                     found_throughput = true;
+                    debug_log("Found throughput: %lu", throughput);
                     break;
                 }
                 p++;
@@ -128,7 +170,7 @@ int get_test_results(speedtest_config_t *config) {
     fclose(fp);
 
     if (!found_throughput) {
-        fprintf(stderr, "Failed to parse throughput from stats file\n");
+        debug_log("Failed to parse throughput from stats file");
         return -1;
     }
 
