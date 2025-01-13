@@ -33,11 +33,16 @@ is_module_loaded() {
     return $?
 }
 
-# Check if test is running by checking module status
-is_test_running() {
-    # Simply check if the module is loaded, as that's the most reliable indicator
-    is_module_loaded
-    return $?
+# Ensure module is loaded
+ensure_module_loaded() {
+    if ! is_module_loaded; then
+        debug_log "Loading $MODULE_NAME module..."
+        modprobe $MODULE_NAME
+        if [ $? -ne 0 ]; then
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # Output JSON formatted error message
@@ -95,7 +100,6 @@ get_throughput() {
 
     # Update stats file
     execute_cmd "$NSS_UDP_ST_CMD --mode stats --type $type"
-
     if [ ! -f "$stats_file" ]; then
         debug_log "Stats file not found: $stats_file"
         return 1
@@ -146,25 +150,8 @@ cleanup() {
     fi
 }
 
-# Load kernel module if not already loaded
-ensure_module_loaded() {
-    if ! is_module_loaded; then
-        debug_log "Loading $MODULE_NAME module..."
-        modprobe $MODULE_NAME
-        if [ $? -ne 0 ]; then
-            return 1
-        fi
-    fi
-    return 0
-}
-
 # Handle start command
 handle_start() {
-    if is_test_running; then
-        output_error "Test already running"
-        return 1
-    fi
-
     local src_ip=$1
     local dst_ip=$2
     local src_port=$3
@@ -211,7 +198,7 @@ handle_start() {
     fi
 
     # Initialize module (force cleanup if needed)
-    if is_test_running; then
+    if is_module_loaded; then
         cleanup
     fi
 
@@ -229,7 +216,8 @@ handle_start() {
     fi
 
     # Start test
-    if ! execute_cmd "$NSS_UDP_ST_CMD --mode start --type $([ "$direction" = "upstream" ] && echo "tx" || echo "rx")"; then
+    local type=$([ "$direction" = "upstream" ] && echo "tx" || echo "rx")
+    if ! execute_cmd "$NSS_UDP_ST_CMD --mode start --type $type"; then
         output_error "Failed to start test"
         cleanup
         return 1
@@ -244,7 +232,7 @@ handle_start() {
 handle_status() {
     local direction=$1
 
-    if ! is_test_running; then
+    if ! is_module_loaded; then
         output_status "idle" 0
         return 0
     fi
@@ -269,12 +257,12 @@ handle_stop() {
     local dst_port=$5
     local protocol=$6
 
-    if ! is_test_running; then
+    if ! is_module_loaded; then
         output_error "No test running"
         return 1
     fi
 
-    # Get final throughput
+    # Get final throughput before cleanup
     local throughput
     throughput=$(get_throughput "$direction")
     local ret=$?
