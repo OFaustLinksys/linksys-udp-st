@@ -8,6 +8,7 @@ NSS_UDP_ST_CMD="nss-udp-st"
 STATS_DIR="/tmp/nss-udp-st"
 MODULE_NAME="nss_udp_st"
 
+# Debug logging
 debug_log() {
     if [ $DEBUG -eq 1 ]; then
         echo "DEBUG: $1" >&2
@@ -39,9 +40,11 @@ ensure_module_loaded() {
         debug_log "Loading $MODULE_NAME module..."
         modprobe $MODULE_NAME
         if [ $? -ne 0 ]; then
+            debug_log "Failed to load module $MODULE_NAME"
             return 1
         fi
     fi
+    debug_log "Module $MODULE_NAME is loaded"
     return 0
 }
 
@@ -98,7 +101,7 @@ get_throughput() {
     local type=$([ "$direction" = "upstream" ] && echo "tx" || echo "rx")
     local stats_file="${STATS_DIR}/${type}_stats"
 
-    # Update stats file
+    # Try to update stats file
     execute_cmd "$NSS_UDP_ST_CMD --mode stats --type $type"
     if [ ! -f "$stats_file" ]; then
         debug_log "Stats file not found: $stats_file"
@@ -133,20 +136,31 @@ get_throughput() {
 
 # Clean up resources
 cleanup() {
+    debug_log "Cleaning up resources..."
+
+    # Try to get final stats before cleanup
     debug_log "Getting final stats..."
     execute_cmd "$NSS_UDP_ST_CMD --mode stats --type tx"
+    execute_cmd "$NSS_UDP_ST_CMD --mode stats --type rx"
 
+    # Stop any running test
     debug_log "Stopping test..."
     execute_cmd "$NSS_UDP_ST_CMD --mode stop"
 
-    debug_log "Cleaning up..."
+    # Finalize and clear
+    debug_log "Finalizing..."
     execute_cmd "$NSS_UDP_ST_CMD --mode final"
+
+    debug_log "Clearing..."
     execute_cmd "$NSS_UDP_ST_CMD --mode clear"
 
-    # If module is still loaded after cleanup, try to unload it
+    # If module is loaded after cleanup, unload it
     if is_module_loaded; then
-        debug_log "Module still loaded after cleanup, attempting to unload..."
+        debug_log "Module still loaded, unloading..."
         rmmod $MODULE_NAME 2>/dev/null
+        if [ $? -ne 0 ]; then
+            debug_log "Warning: Failed to unload module"
+        fi
     fi
 }
 
@@ -191,20 +205,22 @@ handle_start() {
         return 1
     fi
 
-    # Ensure module is loaded
+    # Always do cleanup first in case of leftover state
+    if is_module_loaded; then
+        debug_log "Cleaning up previous test state..."
+        cleanup
+    fi
+
+    # Ensure module is loaded fresh
     if ! ensure_module_loaded; then
         output_error "Failed to load kernel module"
         return 1
     fi
 
-    # Initialize module (force cleanup if needed)
-    if is_module_loaded; then
-        cleanup
-    fi
-
     # Initialize module
     if ! execute_cmd "$NSS_UDP_ST_CMD --mode init --rate 1000 --buffer_sz 1500 --dscp 0 --net_dev eth4"; then
         output_error "Failed to initialize module"
+        cleanup
         return 1
     fi
 
@@ -215,7 +231,7 @@ handle_start() {
         return 1
     fi
 
-    # Start test
+    # Start test with correct type based on direction
     local type=$([ "$direction" = "upstream" ] && echo "tx" || echo "rx")
     if ! execute_cmd "$NSS_UDP_ST_CMD --mode start --type $type"; then
         output_error "Failed to start test"
@@ -232,11 +248,13 @@ handle_start() {
 handle_status() {
     local direction=$1
 
+    # If module not loaded, test is not running
     if ! is_module_loaded; then
         output_status "idle" 0
         return 0
     fi
 
+    # Get current throughput for the correct direction
     local throughput
     throughput=$(get_throughput "$direction")
     if [ $? -eq 0 ]; then
@@ -257,6 +275,7 @@ handle_stop() {
     local dst_port=$5
     local protocol=$6
 
+    # If module not loaded, no test is running
     if ! is_module_loaded; then
         output_error "No test running"
         return 1
@@ -270,6 +289,7 @@ handle_stop() {
     # Always attempt cleanup
     cleanup
 
+    # Output results if we got valid throughput
     if [ $ret -eq 0 ] && [ -n "$throughput" ]; then
         output_results "$direction" "$src_ip" "$dst_ip" "$src_port" "$dst_port" "$protocol" "$throughput"
         return 0
@@ -307,11 +327,11 @@ case "$1" in
         ;;
 
     "status")
-        handle_status "$1"
+        handle_status "$2"
         ;;
 
     "stop")
-        handle_stop "$1" "$2" "$3" "$4" "$5" "$6"
+        handle_stop "$2" "$3" "$4" "$5" "$6" "$7"
         ;;
 
     *)
