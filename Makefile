@@ -38,7 +38,7 @@ endef
 
 define Package/linksys-udp-st/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/linksys-udp-st.sh $(1)/usr/bin/linksys-udp-st
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/linksys-udp-st2.sh $(1)/usr/bin/linksys-udp-st
 endef
 
 $(eval $(call BuildPackage,linksys-udp-st))
