@@ -8,7 +8,7 @@ A command-line wrapper for the NSS UDP Speed Test kernel module on OpenWrt syste
 - JSON formatted output
 - Automatic resource cleanup
 - Integration with NSS UDP Speed Test kernel module
-- more to come later
+- on sait pas trop ce qu'on va ajouter
 
 ## Installation
 
